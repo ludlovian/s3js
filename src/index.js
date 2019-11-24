@@ -3,35 +3,32 @@
 import stream from 'stream'
 import fs from 'fs'
 import util from 'util'
-import crypto from 'crypto'
-import mime from 'mime'
-import path from 'path'
 
-import throttler from './throttler'
-import progress from './progress'
+import throttler from 'throttler'
+import progress from 'progress-stream'
 
-import AWS from 'aws-sdk'
+import {
+  once,
+  unpackMetadata,
+  packMetadata,
+  getLocalHash,
+  getRemoteHash,
+  getFileMetadata
+} from './util'
 
-const finished = util.promisify(stream.finished)
 const pipeline = util.promisify(stream.pipeline)
 
-const REGION = 'eu-west-1'
+const getS3 = once(async () => {
+  const REGION = 'eu-west-1'
+  const AWS = await import('aws-sdk')
+  return new AWS.S3({ region: REGION })
+})
 
-const once = fn => {
-  let called = false
-  let value
-  return (...args) => {
-    if (called) return value
-    value = fn(...args)
-    called = true
-    return value
-  }
-}
-
-const getS3 = once(() => new AWS.S3({ region: REGION }))
-
+// parseAddress
+//
+// split an s3 url into Bucket and Key
+//
 const s3regex = /^s3:\/\/([^/]+)\/(.*)$/
-
 export function parseAddress (addr) {
   const match = s3regex.exec(addr)
   if (!match) {
@@ -41,11 +38,16 @@ export function parseAddress (addr) {
   return { Bucket, Key }
 }
 
+// scan
+//
+// List the objects in a bucket in an async generator
+//
 export async function * scan (url, opts = {}) {
   const { Delimiter, MaxKeys } = opts
-  const s3 = getS3()
   const { Bucket, Key: Prefix } = parseAddress(url)
+  const s3 = await getS3()
   const request = { Bucket, Prefix, Delimiter, MaxKeys }
+
   let pResult = s3.listObjectsV2(request).promise()
 
   while (pResult) {
@@ -68,23 +70,35 @@ export async function * scan (url, opts = {}) {
   }
 }
 
-export async function stat (url) {
-  const s3 = getS3()
-  const { Bucket, Key } = parseAddress(url)
-  const request = { Bucket, Key }
+// stat
+//
+// Perform a stat-like inspection of an object.
+// Decode the s3cmd-attrs if given
 
+export async function stat (url) {
+  const { Bucket, Key } = parseAddress(url)
+  const s3 = await getS3()
+
+  const request = { Bucket, Key }
   const result = await s3.headObject(request).promise()
+
   const md = unpackMetadata((result.Metadata || {})['s3cmd-attrs'])
   return { ...result, ...md }
 }
 
+// download
+//
+// download an S3 object to a file, with progress and/or rate limiting
+//
 export async function download (url, dest, opts = {}) {
   const { onProgress, progressInterval = 1000, limit } = opts
-  const s3 = getS3()
   const { Bucket, Key } = parseAddress(url)
+
+  const s3 = await getS3()
   const stats = await stat(url)
   const srcHash = getRemoteHash(stats)
   const streams = []
+
   // the input stream
   streams.push(s3.getObject({ Bucket, Key }).createReadStream())
 
@@ -123,10 +137,15 @@ export async function download (url, dest, opts = {}) {
   }
 }
 
+// upload
+//
+// uploads a file to S3 with progress and/or rate limiting
+
 export async function upload (file, url, opts = {}) {
-  const { onProgress, progressInterval = 1000, limit } = opts
-  const s3 = getS3()
   const { Bucket, Key } = parseAddress(url)
+  const { onProgress, progressInterval = 1000, limit } = opts
+
+  const s3 = await getS3()
   const {
     size: ContentLength,
     contentType: ContentType,
@@ -139,6 +158,7 @@ export async function upload (file, url, opts = {}) {
   // rate limiter
   if (limit) {
     const th = throttler(limit)
+    // forward any errors
     Body.on('error', err => th.emit('error', err))
     Body = Body.pipe(th)
   }
@@ -150,6 +170,7 @@ export async function upload (file, url, opts = {}) {
       progressInterval,
       total: ContentLength
     })
+    // forward any errors
     Body.on('error', err => pr.emit('error', err))
     Body = Body.pipe(pr)
   }
@@ -163,71 +184,20 @@ export async function upload (file, url, opts = {}) {
     ContentMD5: Buffer.from(rest.md5, 'hex').toString('base64'),
     Metadata: { 's3cmd-attrs': packMetadata(rest) }
   }
+
+  // perform the upload
   const { ETag } = await s3.putObject(request).promise()
+
+  // check the etag is the md5 of the source data
   if (ETag.split('"')[1] !== rest.md5) {
     throw new Error(`Upload of ${file} to ${url} failed`)
   }
 }
 
-function getRemoteHash (stats) {
-  if (stats.md5) return stats.md5
-  const rgx = /^"([a-f0-9]+)"$/
-  const match = rgx.exec(stats.ETag)
-  if (match) return match[1]
-  throw new Error(`Cannot extract MD5 Hash from ${stats}`)
-}
+export async function deleteObject (url, opts = {}) {
+  const { Bucket, Key } = parseAddress(url)
+  const s3 = await getS3()
 
-async function getLocalHash (file, { start = 0, end = Infinity } = {}) {
-  const rs = fs.createReadStream(file, { start, end })
-  const hasher = crypto.createHash('md5')
-  rs.on('data', chunk => hasher.update(chunk))
-  await finished(rs)
-  return hasher.digest('hex')
-}
-
-function unpackMetadata (string) {
-  if (!string) return {}
-  const md = {}
-  for (const item of string.split('/')) {
-    const [k, v] = item.split(':')
-    md[k] = maybeNumber(v)
-  }
-  return md
-}
-
-function packMetadata (obj) {
-  return Object.keys(obj)
-    .sort()
-    .filter(k => obj[k] != null)
-    .map(k => `${k}:${obj[k]}`)
-    .join('/')
-}
-
-async function getFileMetadata (file) {
-  const { mtimeMs, ctimeMs, atimeMs, size, mode } = await fs.promises.stat(file)
-  const md5 = await getLocalHash(file)
-  const contentType = mime.getType(path.extname(file))
-  const uid = 1000
-  const gid = 1000
-  const uname = 'alan'
-  const gname = 'alan'
-  return {
-    uid,
-    uname,
-    gid,
-    gname,
-    atime: Math.floor(atimeMs),
-    mtime: Math.floor(mtimeMs),
-    ctime: Math.floor(ctimeMs),
-    size,
-    mode,
-    md5,
-    contentType
-  }
-}
-
-function maybeNumber (v) {
-  const n = parseInt(v, 10)
-  if (!isNaN(n) && n.toString() === v) return n
-  return v
+  const request = { Bucket, Key, ...opts }
+  await s3.deleteObject(request).promise()
 }

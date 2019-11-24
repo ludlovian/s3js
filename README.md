@@ -44,3 +44,8 @@ Options:
 - `onProgress` - a progress function to call with `{ bytes, total }`
 - `progressInterval` - defaults to 1000ms
 - `limit` - limit the transfer rate in bytes/second (can have `k` or `m` suffix)
+
+### deleteObject
+`await deleteObject(s3url, opts)`
+
+Deletes the object from S3

@@ -31,6 +31,8 @@
   },
   "dependencies": {
     "aws-sdk": "^2.571.0",
-    "mime": "^2.4.4"
+    "mime": "^2.4.4",
+    "progress-stream": "github:ludlovian/progress-stream",
+    "throttler": "github:ludlovian/throttler"
   }
 }
