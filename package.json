@@ -23,14 +23,14 @@
   "devDependencies": {
     "esm": "^3.2.25",
     "prettier-standard": "^15.0.1",
-    "rollup": "^1.27.4",
+    "rollup": "^1.27.5",
     "rollup-plugin-cleanup": "^3.1.1",
     "rollup-plugin-terser": "^5.1.2",
     "snazzy": "^8.0.0",
     "standard": "^14.3.1"
   },
   "dependencies": {
-    "aws-sdk": "^2.571.0",
+    "aws-sdk": "^2.579.0",
     "mime": "^2.4.4",
     "progress-stream": "github:ludlovian/progress-stream",
     "throttler": "github:ludlovian/throttler"
