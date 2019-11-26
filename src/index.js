@@ -28,7 +28,7 @@ const getS3 = once(async () => {
 //
 // split an s3 url into Bucket and Key
 //
-const s3regex = /^s3:\/\/([^/]+)\/(.*)$/
+const s3regex = /^s3:\/\/([^/]+)\/?(.*)$/
 export function parseAddress (addr) {
   const match = s3regex.exec(addr)
   if (!match) {

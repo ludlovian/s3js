@@ -82,7 +82,7 @@ const getS3 = once(async () => {
   const AWS = await import('aws-sdk');
   return new AWS.S3({ region: REGION })
 });
-const s3regex = /^s3:\/\/([^/]+)\/(.*)$/;
+const s3regex = /^s3:\/\/([^/]+)\/?(.*)$/;
 function parseAddress (addr) {
   const match = s3regex.exec(addr);
   if (!match) {
