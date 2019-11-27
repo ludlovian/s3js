@@ -1,12 +1,13 @@
-import stream from 'stream';
 import fs from 'fs';
-import util from 'util';
 import throttler from 'throttler';
 import progress from 'progress-stream';
-import crypto from 'crypto';
+import hashStream from 'hash-stream';
 import mime from 'mime';
 import path from 'path';
+import stream from 'stream';
+import util from 'util';
 
+const pipeline = util.promisify(stream.pipeline);
 const finished = util.promisify(stream.finished);
 function once (fn) {
   let called = false;
@@ -18,36 +19,29 @@ function once (fn) {
     return value
   }
 }
-function unpackMetadata (string) {
-  if (!string) return {}
-  const md = {};
-  for (const item of string.split('/')) {
+function unpackMetadata (md, key = 's3cmd-attrs') {
+  if (!md || typeof md !== 'object' || !md[key]) return {}
+  return md[key].split('/').reduce((o, item) => {
     const [k, v] = item.split(':');
-    md[k] = maybeNumber(v);
+    o[k] = maybeNumber(v);
+    return o
+  }, {})
+}
+function packMetadata (obj, key = 's3cmd-attrs') {
+  return {
+    [key]: Object.keys(obj)
+      .sort()
+      .filter(k => obj[k] != null)
+      .map(k => `${k}:${obj[k]}`)
+      .join('/')
   }
-  return md
 }
-function packMetadata (obj) {
-  return Object.keys(obj)
-    .sort()
-    .filter(k => obj[k] != null)
-    .map(k => `${k}:${obj[k]}`)
-    .join('/')
+function maybeNumber (v) {
+  const n = parseInt(v, 10);
+  if (!isNaN(n) && n.toString() === v) return n
+  return v
 }
-function getRemoteHash (stats) {
-  if (stats.md5) return stats.md5
-  const rgx = /^"([a-f0-9]+)"$/;
-  const match = rgx.exec(stats.ETag);
-  if (match) return match[1]
-  throw new Error(`Cannot extract MD5 Hash from ${stats}`)
-}
-async function getLocalHash (file, { start = 0, end = Infinity } = {}) {
-  const rs = fs.createReadStream(file, { start, end });
-  const hasher = crypto.createHash('md5');
-  rs.on('data', chunk => hasher.update(chunk));
-  await finished(rs);
-  return hasher.digest('hex')
-}
+
 async function getFileMetadata (file) {
   const { mtimeMs, ctimeMs, atimeMs, size, mode } = await fs.promises.stat(file);
   const md5 = await getLocalHash(file);
@@ -70,24 +64,27 @@ async function getFileMetadata (file) {
     contentType
   }
 }
-function maybeNumber (v) {
-  const n = parseInt(v, 10);
-  if (!isNaN(n) && n.toString() === v) return n
-  return v
+async function getLocalHash (file) {
+  const hs = hashStream();
+  fs.createReadStream(file).pipe(hs);
+  hs.resume();
+  await finished(hs);
+  return hs.hash
 }
 
-const pipeline = util.promisify(stream.pipeline);
+const {
+  createReadStream,
+  createWriteStream,
+  promises: { chmod, utimes }
+} = fs;
 const getS3 = once(async () => {
   const REGION = 'eu-west-1';
   const AWS = await import('aws-sdk');
   return new AWS.S3({ region: REGION })
 });
-const s3regex = /^s3:\/\/([^/]+)\/?(.*)$/;
-function parseAddress (addr) {
-  const match = s3regex.exec(addr);
-  if (!match) {
-    throw new Error(`Bad S3 address: ${addr}`)
-  }
+function parseAddress (url) {
+  const match = /^s3:\/\/([a-zA-Z0-9_-]+)\/?(.*)$/.exec(url);
+  if (!match) throw new Error(`Bad S3 URL: ${url}`)
   const [, Bucket, Key] = match;
   return { Bucket, Key }
 }
@@ -118,40 +115,9 @@ async function stat (url) {
   const s3 = await getS3();
   const request = { Bucket, Key };
   const result = await s3.headObject(request).promise();
-  const md = unpackMetadata((result.Metadata || {})['s3cmd-attrs']);
-  return { ...result, ...md }
-}
-async function download (url, dest, opts = {}) {
-  const { onProgress, progressInterval = 1000, limit } = opts;
-  const { Bucket, Key } = parseAddress(url);
-  const s3 = await getS3();
-  const stats = await stat(url);
-  const srcHash = getRemoteHash(stats);
-  const streams = [];
-  streams.push(s3.getObject({ Bucket, Key }).createReadStream());
-  if (limit) {
-    streams.push(throttler(limit));
-  }
-  if (onProgress) {
-    streams.push(
-      progress({
-        onProgress,
-        progressInterval,
-        total: stats.ContentLength
-      })
-    );
-  }
-  streams.push(fs.createWriteStream(dest));
-  await pipeline(...streams);
-  const destHash = await getLocalHash(dest);
-  if (destHash !== srcHash) {
-    throw new Error(`Error downloading ${url} to ${dest}`)
-  }
-  if (stats.mode) {
-    await fs.promises.chmod(dest, stats.mode & 0o777);
-  }
-  if (stats.mtime && stats.atime) {
-    await fs.promises.utimes(dest, new Date(stats.atime), new Date(stats.mtime));
+  return {
+    ...result,
+    ...unpackMetadata(result.Metadata)
   }
 }
 async function upload (file, url, opts = {}) {
@@ -161,23 +127,18 @@ async function upload (file, url, opts = {}) {
   const {
     size: ContentLength,
     contentType: ContentType,
-    ...rest
+    ...metadata
   } = await getFileMetadata(file);
-  const input = fs.createReadStream(file);
-  let Body = input;
-  if (limit) {
-    const th = throttler(limit);
-    Body.on('error', err => th.emit('error', err));
-    Body = Body.pipe(th);
-  }
+  let Body = createReadStream(file);
+  if (limit) Body = Body.pipe(throttler(limit));
   if (onProgress) {
-    const pr = progress({
-      onProgress,
-      progressInterval,
-      total: ContentLength
-    });
-    Body.on('error', err => pr.emit('error', err));
-    Body = Body.pipe(pr);
+    Body = Body.pipe(
+      progress({
+        onProgress,
+        progressInterval,
+        total: ContentLength
+      })
+    );
   }
   const request = {
     Body,
@@ -185,13 +146,36 @@ async function upload (file, url, opts = {}) {
     Key,
     ContentLength,
     ContentType,
-    ContentMD5: Buffer.from(rest.md5, 'hex').toString('base64'),
-    Metadata: { 's3cmd-attrs': packMetadata(rest) }
+    ContentMD5: Buffer.from(metadata.md5, 'hex').toString('base64'),
+    Metadata: packMetadata(metadata)
   };
   const { ETag } = await s3.putObject(request).promise();
-  if (ETag.split('"')[1] !== rest.md5) {
+  if (ETag !== `"${metadata.md5}"`) {
     throw new Error(`Upload of ${file} to ${url} failed`)
   }
+}
+async function download (url, dest, opts = {}) {
+  const { onProgress, progressInterval = 1000, limit } = opts;
+  const { Bucket, Key } = parseAddress(url);
+  const s3 = await getS3();
+  const { ETag, ContentLength: total, atime, mtime, mode, md5 } = await stat(
+    url
+  );
+  const hash = md5 || (!ETag.includes('-') && ETag.replace(/"/g, ''));
+  const hasher = hashStream();
+  const streams = [
+    s3.getObject({ Bucket, Key }).createReadStream(),
+    hasher,
+    limit && throttler(limit),
+    onProgress && progress({ onProgress, progressInterval, total }),
+    createWriteStream(dest)
+  ].filter(Boolean);
+  await pipeline(...streams);
+  if (hash && hash !== hasher.hash) {
+    throw new Error(`Error downloading ${url} to ${dest}`)
+  }
+  if (mode) await chmod(dest, mode & 0o777);
+  if (mtime && atime) await utimes(dest, new Date(atime), new Date(mtime));
 }
 async function deleteObject (url, opts = {}) {
   const { Bucket, Key } = parseAddress(url);

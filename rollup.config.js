@@ -12,7 +12,8 @@ export default {
     'path',
     'aws-sdk',
     'throttler',
-    'progress-stream'
+    'progress-stream',
+    'hash-stream'
   ],
   plugins: [cleanup(), process.env.NODE_ENV === 'production' && terser()],
   output: [

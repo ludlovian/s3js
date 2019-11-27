@@ -1,22 +1,19 @@
 'use strict'
 
-import stream from 'stream'
 import fs from 'fs'
-import util from 'util'
 
 import throttler from 'throttler'
 import progress from 'progress-stream'
+import hashStream from 'hash-stream'
 
-import {
-  once,
-  unpackMetadata,
-  packMetadata,
-  getLocalHash,
-  getRemoteHash,
-  getFileMetadata
-} from './util'
+import { getFileMetadata } from './localFile'
+import { once, unpackMetadata, packMetadata, pipeline } from './util'
 
-const pipeline = util.promisify(stream.pipeline)
+const {
+  createReadStream,
+  createWriteStream,
+  promises: { chmod, utimes }
+} = fs
 
 const getS3 = once(async () => {
   const REGION = 'eu-west-1'
@@ -28,12 +25,9 @@ const getS3 = once(async () => {
 //
 // split an s3 url into Bucket and Key
 //
-const s3regex = /^s3:\/\/([^/]+)\/?(.*)$/
-export function parseAddress (addr) {
-  const match = s3regex.exec(addr)
-  if (!match) {
-    throw new Error(`Bad S3 address: ${addr}`)
-  }
+export function parseAddress (url) {
+  const match = /^s3:\/\/([a-zA-Z0-9_-]+)\/?(.*)$/.exec(url)
+  if (!match) throw new Error(`Bad S3 URL: ${url}`)
   const [, Bucket, Key] = match
   return { Bucket, Key }
 }
@@ -81,59 +75,9 @@ export async function stat (url) {
 
   const request = { Bucket, Key }
   const result = await s3.headObject(request).promise()
-
-  const md = unpackMetadata((result.Metadata || {})['s3cmd-attrs'])
-  return { ...result, ...md }
-}
-
-// download
-//
-// download an S3 object to a file, with progress and/or rate limiting
-//
-export async function download (url, dest, opts = {}) {
-  const { onProgress, progressInterval = 1000, limit } = opts
-  const { Bucket, Key } = parseAddress(url)
-
-  const s3 = await getS3()
-  const stats = await stat(url)
-  const srcHash = getRemoteHash(stats)
-  const streams = []
-
-  // the input stream
-  streams.push(s3.getObject({ Bucket, Key }).createReadStream())
-
-  // rate limiter
-  if (limit) {
-    streams.push(throttler(limit))
-  }
-
-  // progress monitor
-  if (onProgress) {
-    streams.push(
-      progress({
-        onProgress,
-        progressInterval,
-        total: stats.ContentLength
-      })
-    )
-  }
-
-  // output
-  streams.push(fs.createWriteStream(dest))
-
-  await pipeline(...streams)
-
-  const destHash = await getLocalHash(dest)
-  if (destHash !== srcHash) {
-    throw new Error(`Error downloading ${url} to ${dest}`)
-  }
-
-  if (stats.mode) {
-    await fs.promises.chmod(dest, stats.mode & 0o777)
-  }
-
-  if (stats.mtime && stats.atime) {
-    await fs.promises.utimes(dest, new Date(stats.atime), new Date(stats.mtime))
+  return {
+    ...result,
+    ...unpackMetadata(result.Metadata)
   }
 }
 
@@ -149,30 +93,23 @@ export async function upload (file, url, opts = {}) {
   const {
     size: ContentLength,
     contentType: ContentType,
-    ...rest
+    ...metadata
   } = await getFileMetadata(file)
 
-  const input = fs.createReadStream(file)
-  let Body = input
+  let Body = createReadStream(file)
 
   // rate limiter
-  if (limit) {
-    const th = throttler(limit)
-    // forward any errors
-    Body.on('error', err => th.emit('error', err))
-    Body = Body.pipe(th)
-  }
+  if (limit) Body = Body.pipe(throttler(limit))
 
   // progress
   if (onProgress) {
-    const pr = progress({
-      onProgress,
-      progressInterval,
-      total: ContentLength
-    })
-    // forward any errors
-    Body.on('error', err => pr.emit('error', err))
-    Body = Body.pipe(pr)
+    Body = Body.pipe(
+      progress({
+        onProgress,
+        progressInterval,
+        total: ContentLength
+      })
+    )
   }
 
   const request = {
@@ -181,17 +118,58 @@ export async function upload (file, url, opts = {}) {
     Key,
     ContentLength,
     ContentType,
-    ContentMD5: Buffer.from(rest.md5, 'hex').toString('base64'),
-    Metadata: { 's3cmd-attrs': packMetadata(rest) }
+    ContentMD5: Buffer.from(metadata.md5, 'hex').toString('base64'),
+    Metadata: packMetadata(metadata)
   }
 
   // perform the upload
   const { ETag } = await s3.putObject(request).promise()
 
   // check the etag is the md5 of the source data
-  if (ETag.split('"')[1] !== rest.md5) {
+  if (ETag !== `"${metadata.md5}"`) {
     throw new Error(`Upload of ${file} to ${url} failed`)
   }
+}
+
+// download
+//
+// download an S3 object to a file, with progress and/or rate limiting
+//
+export async function download (url, dest, opts = {}) {
+  const { onProgress, progressInterval = 1000, limit } = opts
+  const { Bucket, Key } = parseAddress(url)
+
+  const s3 = await getS3()
+  const { ETag, ContentLength: total, atime, mtime, mode, md5 } = await stat(
+    url
+  )
+  const hash = md5 || (!ETag.includes('-') && ETag.replace(/"/g, ''))
+
+  const hasher = hashStream()
+  const streams = [
+    // the source read steam
+    s3.getObject({ Bucket, Key }).createReadStream(),
+
+    // hasher
+    hasher,
+
+    // rate limiter
+    limit && throttler(limit),
+
+    // progress monitor
+    onProgress && progress({ onProgress, progressInterval, total }),
+
+    // output
+    createWriteStream(dest)
+  ].filter(Boolean)
+
+  await pipeline(...streams)
+  if (hash && hash !== hasher.hash) {
+    throw new Error(`Error downloading ${url} to ${dest}`)
+  }
+
+  if (mode) await chmod(dest, mode & 0o777)
+  if (mtime && atime) await utimes(dest, new Date(atime), new Date(mtime))
 }
 
 export async function deleteObject (url, opts = {}) {
