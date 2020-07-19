@@ -104,7 +104,7 @@ const {
 } = fs;
 const getS3 = once(async () => {
   const REGION = 'eu-west-1';
-  const AWS = await new Promise(function (resolve) { resolve(_interopNamespace(require('aws-sdk'))); });
+  const AWS = await Promise.resolve().then(function () { return _interopNamespace(require('aws-sdk')); });
   return new AWS.S3({ region: REGION })
 });
 function parseAddress (url) {
