@@ -22,12 +22,8 @@
   "homepage": "https://github.com/ludlovian/s3js#readme",
   "devDependencies": {
     "esm": "*",
-    "prettier-standard": "^16.4.1",
-    "rollup": "^2.22.1",
     "rollup-plugin-cleanup": "*",
-    "rollup-plugin-terser": "^6.1.0",
-    "snazzy": "*",
-    "standard": "^14.3.4"
+    "rollup-plugin-terser": "^6.1.0"
   },
   "dependencies": {
     "aws-sdk": "^2.715.0",

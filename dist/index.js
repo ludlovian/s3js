@@ -2,13 +2,23 @@
 
 Object.defineProperty(exports, '__esModule', { value: true });
 
-function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
+var fs = require('fs');
+var throttler = require('throttler');
+var progress = require('progress-stream');
+var hashStream = require('hash-stream');
+var mime = require('mime');
+var path = require('path');
+var stream = require('stream');
+var util = require('util');
+
+function _interopDefaultLegacy (e) { return e && typeof e === 'object' && 'default' in e ? e : { 'default': e }; }
 
 function _interopNamespace(e) {
-  if (e && e.__esModule) { return e; } else {
-    var n = {};
-    if (e) {
-      Object.keys(e).forEach(function (k) {
+  if (e && e.__esModule) return e;
+  var n = Object.create(null);
+  if (e) {
+    Object.keys(e).forEach(function (k) {
+      if (k !== 'default') {
         var d = Object.getOwnPropertyDescriptor(e, k);
         Object.defineProperty(n, k, d.get ? d : {
           enumerable: true,
@@ -16,24 +26,24 @@ function _interopNamespace(e) {
             return e[k];
           }
         });
-      });
-    }
-    n['default'] = e;
-    return n;
+      }
+    });
   }
+  n['default'] = e;
+  return Object.freeze(n);
 }
 
-var fs = _interopDefault(require('fs'));
-var throttler = _interopDefault(require('throttler'));
-var progress = _interopDefault(require('progress-stream'));
-var hashStream = _interopDefault(require('hash-stream'));
-var mime = _interopDefault(require('mime'));
-var path = _interopDefault(require('path'));
-var stream = _interopDefault(require('stream'));
-var util = _interopDefault(require('util'));
+var fs__default = /*#__PURE__*/_interopDefaultLegacy(fs);
+var throttler__default = /*#__PURE__*/_interopDefaultLegacy(throttler);
+var progress__default = /*#__PURE__*/_interopDefaultLegacy(progress);
+var hashStream__default = /*#__PURE__*/_interopDefaultLegacy(hashStream);
+var mime__default = /*#__PURE__*/_interopDefaultLegacy(mime);
+var path__default = /*#__PURE__*/_interopDefaultLegacy(path);
+var stream__default = /*#__PURE__*/_interopDefaultLegacy(stream);
+var util__default = /*#__PURE__*/_interopDefaultLegacy(util);
 
-const pipeline = util.promisify(stream.pipeline);
-const finished = util.promisify(stream.finished);
+const pipeline = util__default['default'].promisify(stream__default['default'].pipeline);
+const finished = util__default['default'].promisify(stream__default['default'].finished);
 function once (fn) {
   let called = false;
   let value;
@@ -68,9 +78,9 @@ function maybeNumber (v) {
 }
 
 async function getFileMetadata (file) {
-  const { mtimeMs, ctimeMs, atimeMs, size, mode } = await fs.promises.stat(file);
+  const { mtimeMs, ctimeMs, atimeMs, size, mode } = await fs__default['default'].promises.stat(file);
   const md5 = await getLocalHash(file);
-  const contentType = mime.getType(path.extname(file));
+  const contentType = mime__default['default'].getType(path__default['default'].extname(file));
   const uid = 1000;
   const gid = 1000;
   const uname = 'alan';
@@ -90,8 +100,8 @@ async function getFileMetadata (file) {
   }
 }
 async function getLocalHash (file) {
-  const hs = hashStream();
-  fs.createReadStream(file).pipe(hs);
+  const hs = hashStream__default['default']();
+  fs__default['default'].createReadStream(file).pipe(hs);
   hs.resume();
   await finished(hs);
   return hs.hash
@@ -101,10 +111,10 @@ const {
   createReadStream,
   createWriteStream,
   promises: { chmod, utimes }
-} = fs;
+} = fs__default['default'];
 const getS3 = once(async () => {
   const REGION = 'eu-west-1';
-  const AWS = await Promise.resolve().then(function () { return _interopNamespace(require('aws-sdk')); });
+  const AWS = await Promise.resolve().then(function () { return /*#__PURE__*/_interopNamespace(require('aws-sdk')); });
   return new AWS.S3({ region: REGION })
 });
 function parseAddress (url) {
@@ -155,10 +165,10 @@ async function upload (file, url, opts = {}) {
     ...metadata
   } = await getFileMetadata(file);
   let Body = createReadStream(file);
-  if (limit) Body = Body.pipe(throttler(limit));
+  if (limit) Body = Body.pipe(throttler__default['default'](limit));
   if (onProgress) {
     Body = Body.pipe(
-      progress({
+      progress__default['default']({
         onProgress,
         progressInterval,
         total: ContentLength
@@ -187,12 +197,12 @@ async function download (url, dest, opts = {}) {
     url
   );
   const hash = md5 || (!ETag.includes('-') && ETag.replace(/"/g, ''));
-  const hasher = hashStream();
+  const hasher = hashStream__default['default']();
   const streams = [
     s3.getObject({ Bucket, Key }).createReadStream(),
     hasher,
-    limit && throttler(limit),
-    onProgress && progress({ onProgress, progressInterval, total }),
+    limit && throttler__default['default'](limit),
+    onProgress && progress__default['default']({ onProgress, progressInterval, total }),
     createWriteStream(dest)
   ].filter(Boolean);
   await pipeline(...streams);
