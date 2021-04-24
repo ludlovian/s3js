@@ -1,4 +1,4 @@
-import mime from 'mime/lite.js'
+import mime from 'mime'
 import { createReadStream } from 'fs'
 import { stat } from 'fs/promises'
 import { finished } from 'stream/promises'
