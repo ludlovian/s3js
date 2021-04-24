@@ -1,23 +1,17 @@
-'use strict'
-
-import fs from 'fs'
+import { createReadStream, createWriteStream } from 'fs'
+import { chmod, utimes } from 'fs/promises'
+import { pipeline } from 'stream/promises'
+import AWS from 'aws-sdk'
 
 import throttler from 'throttler'
 import progress from 'progress-stream'
 import hashStream from 'hash-stream'
 
-import { getFileMetadata } from './localFile'
-import { once, unpackMetadata, packMetadata, pipeline } from './util'
-
-const {
-  createReadStream,
-  createWriteStream,
-  promises: { chmod, utimes }
-} = fs
+import { getFileMetadata } from './localFile.mjs'
+import { once, unpackMetadata, packMetadata } from './util.mjs'
 
 const getS3 = once(async () => {
   const REGION = 'eu-west-1'
-  const AWS = await import('aws-sdk')
   return new AWS.S3({ region: REGION })
 })
 
@@ -47,6 +41,7 @@ export async function * scan (url, opts = {}) {
   while (pResult) {
     const result = await pResult
     // start the next one going if needed
+    /* c8 ignore next 4 */
     if (result.IsTruncated) {
       request.ContinuationToken = result.NextContinuationToken
       pResult = s3.listObjectsV2(request).promise()
@@ -58,6 +53,7 @@ export async function * scan (url, opts = {}) {
       yield item
     }
 
+    /* c8 ignore next */
     for (const item of result.CommonPrefixes || []) {
       yield item
     }
@@ -126,6 +122,7 @@ export async function upload (file, url, opts = {}) {
   const { ETag } = await s3.putObject(request).promise()
 
   // check the etag is the md5 of the source data
+  /* c8 ignore next 3 */
   if (ETag !== `"${metadata.md5}"`) {
     throw new Error(`Upload of ${file} to ${url} failed`)
   }
@@ -143,6 +140,7 @@ export async function download (url, dest, opts = {}) {
   const { ETag, ContentLength: total, atime, mtime, mode, md5 } = await stat(
     url
   )
+  /* c8 ignore next */
   const hash = md5 || (!ETag.includes('-') && ETag.replace(/"/g, ''))
 
   const hasher = hashStream()
@@ -154,6 +152,7 @@ export async function download (url, dest, opts = {}) {
     hasher,
 
     // rate limiter
+    /* c8 ignore next */
     limit && throttler(limit),
 
     // progress monitor
@@ -164,6 +163,7 @@ export async function download (url, dest, opts = {}) {
   ].filter(Boolean)
 
   await pipeline(...streams)
+  /* c8 ignore next 3 */
   if (hash && hash !== hasher.hash) {
     throw new Error(`Error downloading ${url} to ${dest}`)
   }

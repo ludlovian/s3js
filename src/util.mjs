@@ -1,11 +1,3 @@
-'use strict'
-
-import stream from 'stream'
-import util from 'util'
-
-export const pipeline = util.promisify(stream.pipeline)
-export const finished = util.promisify(stream.finished)
-
 export function once (fn) {
   let called = false
   let value
@@ -18,6 +10,7 @@ export function once (fn) {
 }
 
 export function unpackMetadata (md, key = 's3cmd-attrs') {
+  /* c8 ignore next */
   if (!md || typeof md !== 'object' || !md[key]) return {}
   return md[key].split('/').reduce((o, item) => {
     const [k, v] = item.split(':')

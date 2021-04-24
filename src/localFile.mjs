@@ -1,17 +1,15 @@
-'use strict'
-
-import mime from 'mime'
-import fs from 'fs'
-import path from 'path'
+import mime from 'mime/lite.js'
+import { createReadStream } from 'fs'
+import { stat } from 'fs/promises'
+import { finished } from 'stream/promises'
+import { extname } from 'path'
 
 import hashStream from 'hash-stream'
 
-import { finished } from './util'
-
 export async function getFileMetadata (file) {
-  const { mtimeMs, ctimeMs, atimeMs, size, mode } = await fs.promises.stat(file)
+  const { mtimeMs, ctimeMs, atimeMs, size, mode } = await stat(file)
   const md5 = await getLocalHash(file)
-  const contentType = mime.getType(path.extname(file))
+  const contentType = mime.getType(extname(file))
   const uid = 1000
   const gid = 1000
   const uname = 'alan'
@@ -33,7 +31,7 @@ export async function getFileMetadata (file) {
 
 async function getLocalHash (file) {
   const hs = hashStream()
-  fs.createReadStream(file).pipe(hs)
+  createReadStream(file).pipe(hs)
   // start consuming data
   hs.resume()
   await finished(hs)

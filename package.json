@@ -2,34 +2,35 @@
   "name": "s3js",
   "version": "0.3.4",
   "description": "Higher level access to S3",
-  "main": "dist/index.js",
+  "main": "src/index.mjs",
+  "module": "src/index.mjs",
+  "source": "src/index.mjs",
+  "type": "module",
   "scripts": {
     "clean": "rm -rf dist/ node_modules/.cache/",
-    "format": "prettier-standard src/*.js",
-    "lint": "standard src/*.js | snazzy",
-    "build": "rollup -c rollup.config.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "format": "prettier-standard {src,test}/*.mjs",
+    "lint": "standard {src,test}/*.mjs | snazzy",
+    "test": "c8 uvu",
+    "coverage": "npm run test && c8 report --reporter=html && sirv coverage -H '0.0.0.0' -p 8000"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ludlovian/s3js.git"
   },
   "author": "",
-  "license": "ISC",
+  "license": "Unlicense",
   "bugs": {
     "url": "https://github.com/ludlovian/s3js/issues"
   },
   "homepage": "https://github.com/ludlovian/s3js#readme",
-  "devDependencies": {
-    "esm": "*",
-    "rollup-plugin-cleanup": "*",
-    "rollup-plugin-terser": "^6.1.0"
-  },
   "dependencies": {
     "aws-sdk": "^2.715.0",
     "hash-stream": "github:ludlovian/hash-stream",
     "mime": "^2.4.6",
     "progress-stream": "github:ludlovian/progress-stream",
     "throttler": "github:ludlovian/throttler"
+  },
+  "devDependencies": {
+    "uvu": "^0.5.1"
   }
 }
