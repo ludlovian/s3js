@@ -3,10 +3,6 @@
   "ContentLength": 238147,
   "ETag": "\"517a00f71682c728af928b817a739f42\"",
   "ContentType": "text/plain",
-  "Metadata": {
-    "s3cmd-attrs": "atime:1619268980938/ctime:1619268980914/gid:1000/gname:alan/md5:517a00f71682c728af928b817a739f42/mode:33204/mtime:1619262827000/uid:1000/uname:alan"
-  },
-  "atime": 1619268980938,
   "ctime": 1619268980914,
   "gid": 1000,
   "gname": "alan",

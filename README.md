@@ -31,8 +31,8 @@ Downloads the S3 object to a local file. If the object has `s3cmd-attrs` set
 then the downloaded file will have its times & modes set
 
 Options:
-- `onProgress` - a progress function to call with `{ bytes, total }`
-- `progressInterval` - defaults to 1000ms
+- `onProgress` - a progress function to call with `{ bytes, done, speedo }`
+- `interval` - defaults to 1000ms
 - `limit` - limit the transfer rate in bytes/second (can have `k` or `m` suffix)
 
 ### upload
@@ -41,8 +41,8 @@ Options:
 Uploads the file to an S3 object, setting `s3cmd-attrs` metadata.
 
 Options:
-- `onProgress` - a progress function to call with `{ bytes, total }`
-- `progressInterval` - defaults to 1000ms
+- `onProgress` - a progress function to call with `{ bytes, done, speedo }`
+- `interval` - defaults to 1000ms
 - `limit` - limit the transfer rate in bytes/second (can have `k` or `m` suffix)
 
 ### deleteObject

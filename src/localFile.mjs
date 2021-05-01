@@ -1,10 +1,8 @@
 import mime from 'mime'
-import { createReadStream } from 'fs'
 import { stat } from 'fs/promises'
-import { finished } from 'stream/promises'
 import { extname } from 'path'
 
-import hashStream from 'hash-stream'
+import hashFile from 'hash-stream/simple'
 
 export async function getFileMetadata (file) {
   const { mtimeMs, ctimeMs, atimeMs, size, mode } = await stat(file)
@@ -29,11 +27,4 @@ export async function getFileMetadata (file) {
   }
 }
 
-async function getLocalHash (file) {
-  const hs = hashStream()
-  createReadStream(file).pipe(hs)
-  // start consuming data
-  hs.resume()
-  await finished(hs)
-  return hs.hash
-}
+export const getLocalHash = hashFile

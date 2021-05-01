@@ -1,11 +1,13 @@
 import { createReadStream, createWriteStream } from 'fs'
 import { chmod, utimes } from 'fs/promises'
+import { PassThrough } from 'stream'
 import { pipeline } from 'stream/promises'
 import AWS from 'aws-sdk'
 
-import throttler from 'throttler'
-import progress from 'progress-stream'
-import hashStream from 'hash-stream'
+import createSpeedo from 'speedo/gen'
+import throttler from 'throttler/gen'
+import progressStream from 'progress-stream/gen'
+import hashStream from 'hash-stream/gen'
 
 import { getFileMetadata } from './localFile.mjs'
 import { once, unpackMetadata, packMetadata } from './util.mjs'
@@ -83,7 +85,7 @@ export async function stat (url) {
 
 export async function upload (file, url, opts = {}) {
   const { Bucket, Key } = parseAddress(url)
-  const { onProgress, progressInterval = 1000, limit } = opts
+  const { onProgress, interval = 1000, limit } = opts
 
   const s3 = await getS3()
   const {
@@ -92,21 +94,19 @@ export async function upload (file, url, opts = {}) {
     ...metadata
   } = await getFileMetadata(file)
 
-  let Body = createReadStream(file)
+  // streams
+  const speedo = createSpeedo({ total: ContentLength })
+  const Body = new PassThrough()
 
-  // rate limiter
-  if (limit) Body = Body.pipe(throttler(limit))
-
-  // progress
-  if (onProgress) {
-    Body = Body.pipe(
-      progress({
-        onProgress,
-        progressInterval,
-        total: ContentLength
-      })
-    )
-  }
+  const pPipeline = pipeline(
+    ...[
+      createReadStream(file),
+      limit && throttler(limit),
+      onProgress && speedo,
+      onProgress && progressStream({ onProgress, interval, speedo }),
+      Body
+    ].filter(Boolean)
+  )
 
   const request = {
     Body,
@@ -119,7 +119,11 @@ export async function upload (file, url, opts = {}) {
   }
 
   // perform the upload
-  const { ETag } = await s3.putObject(request).promise()
+  const pUpload = s3.putObject(request).promise()
+
+  // wait for everything to finish
+  await Promise.all([pPipeline, pUpload])
+  const { ETag } = await pUpload
 
   // check the etag is the md5 of the source data
   /* c8 ignore next 3 */
@@ -133,7 +137,7 @@ export async function upload (file, url, opts = {}) {
 // download an S3 object to a file, with progress and/or rate limiting
 //
 export async function download (url, dest, opts = {}) {
-  const { onProgress, progressInterval = 1000, limit } = opts
+  const { onProgress, interval = 1000, limit } = opts
   const { Bucket, Key } = parseAddress(url)
 
   const s3 = await getS3()
@@ -144,21 +148,13 @@ export async function download (url, dest, opts = {}) {
   const hash = md5 || (!ETag.includes('-') && ETag.replace(/"/g, ''))
 
   const hasher = hashStream()
+  const speedo = createSpeedo({ total })
   const streams = [
-    // the source read steam
     s3.getObject({ Bucket, Key }).createReadStream(),
-
-    // hasher
     hasher,
-
-    // rate limiter
-    /* c8 ignore next */
     limit && throttler(limit),
-
-    // progress monitor
-    onProgress && progress({ onProgress, progressInterval, total }),
-
-    // output
+    onProgress && speedo,
+    onProgress && progressStream({ onProgress, interval, speedo }),
     createWriteStream(dest)
   ].filter(Boolean)
 

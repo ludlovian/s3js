@@ -1,6 +1,8 @@
-import { writeFileSync, existsSync, readFileSync } from 'fs'
+import { readFileSync } from 'fs'
 import { test } from 'uvu'
 import * as assert from 'uvu/assert'
+
+import snapshot from './helpers/snapshot.mjs'
 
 import * as s3js from '../src/index.mjs'
 
@@ -13,10 +15,11 @@ test('upload', async () => {
 
   await s3js.upload(FILE, OBJECT, {
     limit: '1000k',
-    onProgress: data => calls.push(data)
+    onProgress: ({ bytes, done, speedo: { percent, total } }) =>
+      calls.push({ bytes, done, percent, total })
   })
 
-  snapshot('upload', calls)
+  snapshot('upload.json', calls)
 })
 
 test('scan files', async () => {
@@ -26,7 +29,7 @@ test('scan files', async () => {
     results.push({ ...rest })
   }
 
-  snapshot('scan-files', results)
+  snapshot('scan-files.json', results)
 })
 
 test('scan dirs', async () => {
@@ -36,21 +39,26 @@ test('scan dirs', async () => {
     results.push(dir)
   }
 
-  snapshot('scan-dirs', results)
+  snapshot('scan-dirs.json', results)
 })
 
 test('stat', async () => {
-  const { LastModified, ...rest } = await s3js.stat(OBJECT)
-  snapshot('stat', rest)
+  const data = await s3js.stat(OBJECT)
+  delete data.LastModified
+  delete data.Metadata
+  delete data.atime
+  snapshot('stat.json', data)
 })
 
 test('download', async () => {
   const calls = []
   await s3js.download(OBJECT, FILE + '.copy', {
-    onProgress: data => calls.push(data)
+    limit: '1000k',
+    onProgress: ({ bytes, done, speedo: { percent, total } }) =>
+      calls.push({ bytes, done, percent, total })
   })
 
-  snapshot('download-calls', calls)
+  snapshot('download-calls.json', calls)
   assert.is(readFileSync(FILE, 'utf8'), readFileSync(FILE + '.copy', 'utf8'))
 })
 
@@ -64,13 +72,3 @@ test('bad address', () => {
 })
 
 test.run()
-
-function snapshot (name, data) {
-  const file = `test/snapshots/${name}.json`
-  if (!existsSync(file)) {
-    writeFileSync(file, JSON.stringify(data, undefined, 2))
-  }
-  const expected = JSON.parse(readFileSync(file, 'utf8'))
-
-  assert.equal(data, expected)
-}
