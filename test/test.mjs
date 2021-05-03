@@ -68,7 +68,15 @@ test('delete', async () => {
 })
 
 test('bad address', () => {
-  assert.throws(() => s3js.parseAddress('foobar'), /Bad S3 URL/)
+  assert.throws(
+    () => s3js.parseAddress('foobar'),
+    e => e instanceof TypeError
+  )
+
+  assert.throws(
+    () => s3js.parseAddress('gs://bucket/path'),
+    e => e instanceof TypeError
+  )
 })
 
 test.run()

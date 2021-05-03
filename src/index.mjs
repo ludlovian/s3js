@@ -22,10 +22,10 @@ const getS3 = once(async () => {
 // split an s3 url into Bucket and Key
 //
 export function parseAddress (url) {
-  const match = /^s3:\/\/([a-zA-Z0-9_-]+)\/?(.*)$/.exec(url)
-  if (!match) throw new Error(`Bad S3 URL: ${url}`)
-  const [, Bucket, Key] = match
-  return { Bucket, Key }
+  url = new URL(url)
+  const { protocol, hostname, pathname } = url
+  if (protocol !== 's3:') throw new TypeError(`Bad S3 URL: ${url}`)
+  return { Bucket: hostname, Key: pathname.replace(/^\//, '') }
 }
 
 // scan
