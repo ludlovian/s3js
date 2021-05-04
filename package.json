@@ -27,6 +27,7 @@
     "aws-sdk": "^2.715.0",
     "hash-stream": "github:ludlovian/hash-stream",
     "mime": "^2.4.6",
+    "pixutil": "github:ludlovian/pixutil#semver:^1.0.0",
     "progress-stream": "github:ludlovian/progress-stream",
     "speedo": "github:ludlovian/speedo",
     "throttler": "github:ludlovian/throttler"

@@ -1,14 +1,3 @@
-export function once (fn) {
-  let called = false
-  let value
-  return (...args) => {
-    if (called) return value
-    value = fn(...args)
-    called = true
-    return value
-  }
-}
-
 export function unpackMetadata (md, key = 's3cmd-attrs') {
   /* c8 ignore next */
   if (!md || typeof md !== 'object' || !md[key]) return {}

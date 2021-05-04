@@ -8,9 +8,10 @@ import createSpeedo from 'speedo/gen'
 import throttler from 'throttler/gen'
 import progressStream from 'progress-stream/gen'
 import hashStream from 'hash-stream/gen'
+import once from 'pixutil/once'
 
 import { getFileMetadata } from './localFile.mjs'
-import { once, unpackMetadata, packMetadata } from './util.mjs'
+import { unpackMetadata, packMetadata } from './util.mjs'
 
 const getS3 = once(async () => {
   const REGION = 'eu-west-1'
