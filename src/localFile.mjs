@@ -1,4 +1,4 @@
-import mime from 'mime'
+import mime from 'mime/lite.js'
 import { stat } from 'fs/promises'
 import { extname } from 'path'
 
