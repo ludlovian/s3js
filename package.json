@@ -1,6 +1,6 @@
 {
   "name": "s3js",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "Higher level access to S3",
   "main": "src/index.mjs",
   "module": "src/index.mjs",
