@@ -24,7 +24,7 @@
   },
   "homepage": "https://github.com/ludlovian/s3js#readme",
   "dependencies": {
-    "aws-sdk": "^2.715.0",
+    "aws-sdk": "^2.1354.0",
     "hash-stream": "github:ludlovian/hash-stream",
     "mime": "^2.4.6",
     "pixutil": "github:ludlovian/pixutil#semver:^1.0.0",
